@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Window-level theme; the UI itself is Compose (see ui/theme/Theme.kt). -->
+    <style name="Theme.Airlock" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/airlock_background</item>
+        <item name="android:colorAccent">@color/airlock_teal</item>
+        <item name="android:statusBarColor">@color/airlock_background</item>
+        <item name="android:navigationBarColor">@color/airlock_background</item>
+    </style>
+</resources>

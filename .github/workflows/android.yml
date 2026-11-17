@@ -4,6 +4,9 @@ on:
   push:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -37,3 +40,15 @@ jobs:
           name: airlock-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+
+      - name: Publish to the Releases page
+        # One fixed link: https://github.com/vspayce/airlock-android/releases/latest/download/airlock.apk
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          cp app/build/outputs/apk/debug/*.apk airlock.apk
+          gh release create "build-${{ github.run_number }}" airlock.apk --target "${{ github.sha }}" --latest \
+            --title "Airlock for Android (build ${{ github.run_number }})" \
+            --notes "Download airlock.apk on your phone and open it (allow installing unknown apps). Uninstall the previous test build first."

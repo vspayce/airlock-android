@@ -30,6 +30,14 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onStop() {
+        super.onStop()
+        // Hardened: everything is burned whenever you leave Airlock.
+        if (!isChangingConfigurations && Airlock.prefs(this).mode == Mode.HARDENED) {
+            Airlock.tabs(this).burn { }
+        }
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)

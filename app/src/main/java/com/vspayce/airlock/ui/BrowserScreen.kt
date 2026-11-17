@@ -6,6 +6,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -99,6 +100,8 @@ fun BrowserScreen(manager: TabManager) {
     var confirmBurn by remember { mutableStateOf(false) }
     var showShield by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf(false) }
+    var showSiteInfo by remember { mutableStateOf(false) }
+    val prefs = remember { com.vspayce.airlock.Airlock.prefs(context) }
 
     BackHandler(enabled = editing || showTabs || tab?.canGoBack == true) {
         when {
@@ -118,7 +121,15 @@ fun BrowserScreen(manager: TabManager) {
         Column(Modifier.fillMaxSize()) {
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 GeckoContent(manager)
-                if (tab == null || tab.isBlank) StartPage(engine) { editing = true }
+                if (tab == null || tab.isBlank) {
+                    StartPage(
+                        engine = engine,
+                        prefs = prefs,
+                        onSearch = { editing = true },
+                        onOpen = { url -> if (tab != null) manager.load(tab, url) else manager.newTab(url) },
+                        onMode = { prefs.setMode(it, com.vspayce.airlock.Airlock.runtime(context)) },
+                    )
+                }
             }
             Dock(
                 tab = tab,
@@ -143,6 +154,13 @@ fun BrowserScreen(manager: TabManager) {
                     editing = true
                 },
                 onShield = { showShield = true },
+                onFavorite = {
+                    tab?.takeUnless { it.isBlank }?.let {
+                        val added = prefs.addFavorite(it.title.ifBlank { shortName(it.url) }, it.url)
+                        Toast.makeText(context, if (added) "Added to Favorites" else "Already in Favorites", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                onSiteInfo = { showSiteInfo = true },
                 onBurn = { confirmBurn = true },
                 onShowTabs = { showTabs = true },
             )
@@ -151,10 +169,14 @@ fun BrowserScreen(manager: TabManager) {
         if (showTabs) {
             TabSwitcher(manager = manager, onDismiss = { showTabs = false })
         }
+        if (showSiteInfo && tab != null && !tab.isBlank) {
+            BackHandler { showSiteInfo = false }
+            SiteInfo(tab) { showSiteInfo = false }
+        }
     }
 
     if (showShield && tab != null) {
-        ShieldDialog(tab) { showShield = false }
+        ShieldDialog(tab, onSiteInfo = { showShield = false; showSiteInfo = true }) { showShield = false }
     }
 
     if (confirmBurn) {
@@ -221,6 +243,8 @@ private fun Dock(
     onHome: () -> Unit,
     onNewTab: () -> Unit,
     onShield: () -> Unit,
+    onFavorite: () -> Unit,
+    onSiteInfo: () -> Unit,
     onBurn: () -> Unit,
     onShowTabs: () -> Unit,
 ) {
@@ -241,7 +265,7 @@ private fun Dock(
                 SearchCapsule(tab, engine, onSubmit) { onEditingChange(false) }
             } else {
                 SiteCapsule(tab, onShield = onShield, onBurn = onBurn, onEdit = { onEditingChange(true) })
-                ButtonRow(tab, tabCount, engine, onEngineChange, onHome, onNewTab, onShowTabs)
+                ButtonRow(tab, tabCount, engine, onEngineChange, onHome, onNewTab, onFavorite, onSiteInfo, onShowTabs)
             }
         }
     }
@@ -366,6 +390,8 @@ private fun ButtonRow(
     onEngineChange: (SearchEngine) -> Unit,
     onHome: () -> Unit,
     onNewTab: () -> Unit,
+    onFavorite: () -> Unit,
+    onSiteInfo: () -> Unit,
     onShowTabs: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
@@ -387,6 +413,10 @@ private fun ButtonRow(
                         menuOpen = false
                         if (tab?.loading == true) tab.session.stop() else tab?.session?.reload()
                     })
+                DropdownMenuItem(text = { Text("Add to Favorites") }, enabled = tab != null && !tab.isBlank,
+                    onClick = { menuOpen = false; onFavorite() })
+                DropdownMenuItem(text = { Text("Site info") }, enabled = tab != null && !tab.isBlank,
+                    onClick = { menuOpen = false; onSiteInfo() })
                 HorizontalDivider()
                 Text("Search engine", style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -418,7 +448,7 @@ private fun ButtonRow(
 }
 
 @Composable
-private fun ShieldDialog(tab: BrowserTab, onDismiss: () -> Unit) {
+private fun ShieldDialog(tab: BrowserTab, onSiteInfo: () -> Unit, onDismiss: () -> Unit) {
     val host = runCatching { android.net.Uri.parse(tab.url).host }.getOrNull().orEmpty().removePrefix("www.")
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -443,31 +473,61 @@ private fun ShieldDialog(tab: BrowserTab, onDismiss: () -> Unit) {
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
+        dismissButton = { TextButton(onClick = onSiteInfo) { Text("Site info") } },
     )
 }
 
+private val tileColors = listOf(0xFF2F7F86, 0xFF5B6FD6, 0xFFC2683A, 0xFF3F8F55, 0xFF9B59B6, 0xFFB94A6A, 0xFF8A7A2F, 0xFF3A76B8)
+
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun StartPage(engine: SearchEngine, onSearch: () -> Unit) {
+private fun StartPage(
+    engine: SearchEngine,
+    prefs: com.vspayce.airlock.AirlockPrefs,
+    onSearch: () -> Unit,
+    onOpen: (String) -> Unit,
+    onMode: (com.vspayce.airlock.Mode) -> Unit,
+) {
+    var modeMenu by remember { mutableStateOf(false) }
+    var removing by remember { mutableStateOf<com.vspayce.airlock.Favorite?>(null) }
     Column(
-        Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(32.dp),
-        verticalArrangement = Arrangement.Center,
+        Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(horizontal = 24.dp, vertical = 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        Spacer(Modifier.height(24.dp))
         Image(painterResource(R.drawable.airlock_logo), contentDescription = "Airlock",
-            modifier = Modifier.size(96.dp).clip(RoundedCornerShape(22.dp)))
-        Spacer(Modifier.height(16.dp))
+            modifier = Modifier.size(88.dp).clip(RoundedCornerShape(20.dp)))
+        Spacer(Modifier.height(14.dp))
         Text("Airlock", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(10.dp))
-        // Status chip, like "Sealed · Standard" on the iPhone home screen.
-        Row(
-            Modifier.clip(CircleShape).background(AirlockTeal.copy(alpha = 0.14f)).padding(horizontal = 12.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(painterResource(R.drawable.ic_shield), contentDescription = null, tint = AirlockTeal, modifier = Modifier.size(16.dp))
-            Spacer(Modifier.width(6.dp))
-            Text("Sealed · Strict", color = AirlockTeal, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+        // Mode button: "Sealed · Strict", tap to change (like the iPhone home screen).
+        Box {
+            val label = if (prefs.mode == com.vspayce.airlock.Mode.HARDENED) "Fully Sealed" else "Sealed · ${prefs.mode.label}"
+            Row(
+                Modifier.clip(CircleShape).background(AirlockTeal.copy(alpha = 0.14f)).clickable { modeMenu = true }
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(painterResource(R.drawable.ic_shield), contentDescription = null, tint = AirlockTeal, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("$label ▾", color = AirlockTeal, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+            }
+            DropdownMenu(expanded = modeMenu, onDismissRequest = { modeMenu = false }) {
+                com.vspayce.airlock.Mode.entries.forEach { m ->
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(m.label, fontWeight = FontWeight.SemiBold)
+                                Text(m.detail, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        },
+                        trailingIcon = if (m == prefs.mode) ({ Icon(Icons.Filled.Check, contentDescription = "Selected") }) else null,
+                        onClick = { modeMenu = false; onMode(m) },
+                    )
+                }
+            }
         }
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(22.dp))
         Row(
             Modifier.widthIn(max = 420.dp).fillMaxWidth().height(48.dp).clip(CircleShape)
                 .background(MaterialTheme.colorScheme.surfaceContainerHigh).clickable(onClick = onSearch).padding(horizontal = 16.dp),
@@ -477,6 +537,45 @@ private fun StartPage(engine: SearchEngine, onSearch: () -> Unit) {
             Spacer(Modifier.width(8.dp))
             Text("Search ${engine.label}", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        Spacer(Modifier.height(24.dp))
+        if (prefs.favorites.isEmpty()) {
+            Text("Add sites here with Add to Favorites in the menu.", fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
+                columns = androidx.compose.foundation.lazy.grid.GridCells.Adaptive(76.dp),
+                modifier = Modifier.widthIn(max = 480.dp).fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                items(prefs.favorites.size) { index ->
+                    val f = prefs.favorites[index]
+                    val name = shortName(f.url)
+                    Column(
+                        Modifier.combinedClickable(onClick = { onOpen(f.url) }, onLongClick = { removing = f }),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Box(
+                            Modifier.size(56.dp).clip(RoundedCornerShape(16.dp))
+                                .background(Color(tileColors[name.sumOf { it.code } % tileColors.size])),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(name.take(1).uppercase(), color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Text(f.title.ifBlank { name }, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+        }
+    }
+    removing?.let { f ->
+        AlertDialog(
+            onDismissRequest = { removing = null },
+            title = { Text("Remove from Favorites?") },
+            text = { Text(f.title.ifBlank { f.url }) },
+            confirmButton = { TextButton(onClick = { prefs.removeFavorite(f); removing = null }) { Text("Remove") } },
+            dismissButton = { TextButton(onClick = { removing = null }) { Text("Cancel") } },
+        )
     }
 }
 

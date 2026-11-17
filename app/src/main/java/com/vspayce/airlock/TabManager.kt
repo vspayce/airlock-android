@@ -19,10 +19,17 @@ import org.mozilla.geckoview.StorageController
 object Airlock {
     private var runtime: GeckoRuntime? = null
     private var tabManager: TabManager? = null
+    private var prefs: AirlockPrefs? = null
 
     fun runtime(context: Context): GeckoRuntime =
         runtime ?: GeckoRuntime.create(context.applicationContext, PrivacySettings.runtimeSettings())
-            .also { runtime = it }
+            .also {
+                runtime = it
+                prefs(context).apply(it)
+            }
+
+    fun prefs(context: Context): AirlockPrefs =
+        prefs ?: AirlockPrefs(context.applicationContext).also { prefs = it }
 
     fun tabs(context: Context): TabManager =
         tabManager ?: TabManager(runtime(context)).also { tabManager = it }
@@ -37,6 +44,8 @@ class BrowserTab(val id: Long, val session: GeckoSession) {
     var canGoBack by mutableStateOf(false)
     var canGoForward by mutableStateOf(false)
     var secure by mutableStateOf(false)
+    /** The certificate of the page actually loaded (for Site info). */
+    var certificate by mutableStateOf<java.security.cert.X509Certificate?>(null)
     /** Hosts of trackers and ads Gecko blocked on the current page (shown on the shield). */
     val blocked = mutableStateListOf<String>()
 
@@ -140,6 +149,7 @@ class TabManager(private val runtime: GeckoRuntime) {
                 securityInfo: GeckoSession.ProgressDelegate.SecurityInformation,
             ) {
                 tab.secure = securityInfo.isSecure
+                tab.certificate = securityInfo.certificate
             }
         }
 

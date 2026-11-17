@@ -19,16 +19,11 @@ A starter Android version of Airlock, the privacy browser. It's written in Kotli
 
 ## Get the app onto your phone
 
-Each push to GitHub builds a debug APK automatically, using `.github/workflows/android.yml`.
+**Download on your phone:** https://github.com/vspayce/airlock-android/releases/latest/download/airlock.apk
 
-1. **Download the build.** On GitHub, open the repo's **Actions** tab and click the latest successful **Android debug build** run. Scroll to **Artifacts** and download **airlock-debug-apk**. You need to be signed in to GitHub. You can also start a build yourself from the workflow page with **Run workflow**.
-2. **Unzip it.** GitHub delivers the artifact as a `.zip`. Unzip it to get `app-debug.apk`. You can do this on a computer and copy the APK to the phone (USB, Google Drive, email to yourself and so on), or download and unzip it straight on the phone with the Files app.
-3. **Allow "install unknown apps".** Android only installs apps from outside the Play Store after you give permission to the app that opens the APK (for example Files, Chrome or Drive). Go to **Settings → Apps → Special app access → Install unknown apps**, choose that app, and turn on **Allow from this source**. The exact menu names differ a little between phone makers. Many phones also just ask you the first time you open an APK.
-4. **Open the APK.** Tap `app-debug.apk` and choose **Install**. Play Protect may warn you about an unrecognised app. Choose **Install anyway** (it may be under "More details"). Airlock then shows up in your app drawer.
-
-**Installing a newer build:** CI signs every debug build with a new throwaway key. That means a new APK usually can't install over the old one ("App not installed" or "package conflicts"). Uninstall the old Airlock first. Doing so loses nothing, because Airlock doesn't keep browsing data anyway.
-
-The APK contains `arm64-v8a` code (nearly every modern phone) and `x86_64` code (the emulator). It's large, around 100 MB, because the whole Gecko engine is inside it.
+Open the downloaded file and allow your browser to install unknown apps when Android asks. Every build replaces this
+download, so the same link always gets the newest one. Test builds are signed with a different key each time, so
+uninstall the previous Airlock before installing a newer one.
 
 ## Building it yourself
 
@@ -50,3 +45,8 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk   # optional, with a ph
 | Gradle / AGP / Kotlin | 8.14.3 / 8.10.1 / 2.1.21 |
 
 All versions are in `gradle/libs.versions.toml`.
+
+## License
+
+GNU General Public License v3.0 or later; see `LICENSE`. GeckoView is Mozilla's, under the MPL-2.0; see
+`THIRD-PARTY-NOTICES.md`. Security problems: see `SECURITY.md`.

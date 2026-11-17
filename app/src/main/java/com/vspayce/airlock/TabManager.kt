@@ -31,6 +31,11 @@ object Airlock {
     fun prefs(context: Context): AirlockPrefs =
         prefs ?: AirlockPrefs(context.applicationContext).also { prefs = it }
 
+    private var feeds: FeedStore? = null
+
+    fun feeds(context: Context): FeedStore =
+        feeds ?: FeedStore(context.applicationContext).also { feeds = it }
+
     fun tabs(context: Context): TabManager =
         tabManager ?: TabManager(runtime(context)).also { tabManager = it }
 }

@@ -101,6 +101,8 @@ fun BrowserScreen(manager: TabManager) {
     var showShield by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf(false) }
     var showSiteInfo by remember { mutableStateOf(false) }
+    var showFeeds by rememberSaveable { mutableStateOf(false) }
+    val feedStore = remember { com.vspayce.airlock.Airlock.feeds(context) }
     val prefs = remember { com.vspayce.airlock.Airlock.prefs(context) }
 
     BackHandler(enabled = editing || showTabs || tab?.canGoBack == true) {
@@ -161,6 +163,25 @@ fun BrowserScreen(manager: TabManager) {
                     }
                 },
                 onSiteInfo = { showSiteInfo = true },
+                onFeeds = {
+                    showFeeds = true
+                    if (feedStore.feeds.isNotEmpty()) feedStore.refresh { block -> android.os.Handler(android.os.Looper.getMainLooper()).post(block) }
+                },
+                onFollow = {
+                    tab?.takeUnless { it.isBlank }?.let { t ->
+                        Toast.makeText(context, "Looking for a feed…", Toast.LENGTH_SHORT).show()
+                        Thread {
+                            val result = runCatching { feedStore.followBlocking(t.url) }
+                            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                result.onSuccess { (feed, items) ->
+                                    feedStore.add(feed, items)
+                                    val how = if (feed.watchesPage) "Watching ${feed.title} for new headlines" else "Added to Feeds: ${feed.title}"
+                                    Toast.makeText(context, how, Toast.LENGTH_SHORT).show()
+                                }.onFailure { Toast.makeText(context, "Couldn't find a feed or headlines on this page", Toast.LENGTH_LONG).show() }
+                            }
+                        }.start()
+                    }
+                },
                 onBurn = { confirmBurn = true },
                 onShowTabs = { showTabs = true },
             )
@@ -168,6 +189,13 @@ fun BrowserScreen(manager: TabManager) {
 
         if (showTabs) {
             TabSwitcher(manager = manager, onDismiss = { showTabs = false })
+        }
+        if (showFeeds) {
+            BackHandler { showFeeds = false }
+            FeedsScreen(feedStore, onOpen = { url ->
+                showFeeds = false
+                if (tab != null) manager.load(tab, url) else manager.newTab(url)
+            }) { showFeeds = false }
         }
         if (showSiteInfo && tab != null && !tab.isBlank) {
             BackHandler { showSiteInfo = false }
@@ -245,6 +273,8 @@ private fun Dock(
     onShield: () -> Unit,
     onFavorite: () -> Unit,
     onSiteInfo: () -> Unit,
+    onFeeds: () -> Unit,
+    onFollow: () -> Unit,
     onBurn: () -> Unit,
     onShowTabs: () -> Unit,
 ) {
@@ -265,7 +295,7 @@ private fun Dock(
                 SearchCapsule(tab, engine, onSubmit) { onEditingChange(false) }
             } else {
                 SiteCapsule(tab, onShield = onShield, onBurn = onBurn, onEdit = { onEditingChange(true) })
-                ButtonRow(tab, tabCount, engine, onEngineChange, onHome, onNewTab, onFavorite, onSiteInfo, onShowTabs)
+                ButtonRow(tab, tabCount, engine, onEngineChange, onHome, onNewTab, onFavorite, onSiteInfo, onFeeds, onFollow, onShowTabs)
             }
         }
     }
@@ -392,6 +422,8 @@ private fun ButtonRow(
     onNewTab: () -> Unit,
     onFavorite: () -> Unit,
     onSiteInfo: () -> Unit,
+    onFeeds: () -> Unit,
+    onFollow: () -> Unit,
     onShowTabs: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
@@ -417,6 +449,11 @@ private fun ButtonRow(
                     onClick = { menuOpen = false; onFavorite() })
                 DropdownMenuItem(text = { Text("Site info") }, enabled = tab != null && !tab.isBlank,
                     onClick = { menuOpen = false; onSiteInfo() })
+                DropdownMenuItem(text = { Text("Add to Feeds") }, enabled = tab != null && !tab.isBlank,
+                    onClick = { menuOpen = false; onFollow() })
+                DropdownMenuItem(text = { Text("Forward") }, enabled = tab?.canGoForward == true,
+                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.ArrowForward, null) },
+                    onClick = { menuOpen = false; tab?.session?.goForward() })
                 HorizontalDivider()
                 Text("Search engine", style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -433,8 +470,8 @@ private fun ButtonRow(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
             }
         }
-        IconButton(onClick = { tab?.session?.goForward() }, enabled = tab?.canGoForward == true) {
-            Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Forward")
+        IconButton(onClick = onFeeds) {
+            Icon(painterResource(R.drawable.ic_feeds), contentDescription = "Feeds")
         }
         IconButton(onClick = onShowTabs) {
             Box(

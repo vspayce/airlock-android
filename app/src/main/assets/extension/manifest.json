@@ -1,0 +1,11 @@
+{
+  "manifest_version": 2,
+  "name": "Airlock Reader",
+  "version": "1.0",
+  "description": "Finds the article on a page for Reader view and clipping.",
+  "browser_specific_settings": { "gecko": { "id": "reader@airlock.vspayce.com" } },
+  "content_scripts": [
+    { "matches": ["https://*/*", "http://*/*"], "js": ["Readability.js", "airlock.js"], "run_at": "document_idle" }
+  ],
+  "permissions": ["nativeMessaging", "nativeMessagingFromContent", "geckoViewAddons"]
+}

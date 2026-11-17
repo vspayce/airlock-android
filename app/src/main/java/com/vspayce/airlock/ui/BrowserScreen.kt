@@ -163,6 +163,23 @@ fun BrowserScreen(manager: TabManager) {
                     }
                 },
                 onSiteInfo = { showSiteInfo = true },
+                onReader = {
+                    tab?.let { t ->
+                        if (t.readerTitle != null) t.session.goBack()
+                        else com.vspayce.airlock.Reader.extract(t) { a ->
+                            if (a == null) Toast.makeText(context, "Airlock couldn't find an article on this page", Toast.LENGTH_SHORT).show()
+                            else com.vspayce.airlock.Reader.show(t, a)
+                        }
+                    }
+                },
+                onClip = {
+                    tab?.let { t ->
+                        com.vspayce.airlock.Reader.extract(t) { a ->
+                            if (a == null) Toast.makeText(context, "Open an article to clip it (from the page, not Reader view)", Toast.LENGTH_SHORT).show()
+                            else com.vspayce.airlock.Reader.share(context, a)
+                        }
+                    }
+                },
                 onFeeds = {
                     showFeeds = true
                     if (feedStore.feeds.isNotEmpty()) feedStore.refresh { block -> android.os.Handler(android.os.Looper.getMainLooper()).post(block) }
@@ -275,6 +292,8 @@ private fun Dock(
     onSiteInfo: () -> Unit,
     onFeeds: () -> Unit,
     onFollow: () -> Unit,
+    onReader: () -> Unit,
+    onClip: () -> Unit,
     onBurn: () -> Unit,
     onShowTabs: () -> Unit,
 ) {
@@ -295,7 +314,7 @@ private fun Dock(
                 SearchCapsule(tab, engine, onSubmit) { onEditingChange(false) }
             } else {
                 SiteCapsule(tab, onShield = onShield, onBurn = onBurn, onEdit = { onEditingChange(true) })
-                ButtonRow(tab, tabCount, engine, onEngineChange, onHome, onNewTab, onFavorite, onSiteInfo, onFeeds, onFollow, onShowTabs)
+                ButtonRow(tab, tabCount, engine, onEngineChange, onHome, onNewTab, onFavorite, onSiteInfo, onFeeds, onFollow, onReader, onClip, onShowTabs)
             }
         }
     }
@@ -351,7 +370,7 @@ private fun SiteCapsule(tab: BrowserTab?, onShield: () -> Unit, onBurn: () -> Un
                             modifier = Modifier.size(14.dp))
                         Spacer(Modifier.width(4.dp))
                     }
-                    Text(shortName(url), fontWeight = FontWeight.SemiBold, fontSize = 17.sp, maxLines = 1,
+                    Text(tab?.readerTitle?.let { "Reader" } ?: shortName(url), fontWeight = FontWeight.SemiBold, fontSize = 17.sp, maxLines = 1,
                         overflow = TextOverflow.Ellipsis)
                 }
             }
@@ -424,6 +443,8 @@ private fun ButtonRow(
     onSiteInfo: () -> Unit,
     onFeeds: () -> Unit,
     onFollow: () -> Unit,
+    onReader: () -> Unit,
+    onClip: () -> Unit,
     onShowTabs: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
@@ -449,6 +470,10 @@ private fun ButtonRow(
                     onClick = { menuOpen = false; onFavorite() })
                 DropdownMenuItem(text = { Text("Site info") }, enabled = tab != null && !tab.isBlank,
                     onClick = { menuOpen = false; onSiteInfo() })
+                DropdownMenuItem(text = { Text(if (tab?.readerTitle != null) "Leave Reader view" else "Reader view") },
+                    enabled = tab != null && !tab.isBlank, onClick = { menuOpen = false; onReader() })
+                DropdownMenuItem(text = { Text("Clip to Obsidian / notes…") }, enabled = tab != null && !tab.isBlank && tab.readerTitle == null,
+                    onClick = { menuOpen = false; onClip() })
                 DropdownMenuItem(text = { Text("Add to Feeds") }, enabled = tab != null && !tab.isBlank,
                     onClick = { menuOpen = false; onFollow() })
                 DropdownMenuItem(text = { Text("Forward") }, enabled = tab?.canGoForward == true,

@@ -26,6 +26,7 @@ object Airlock {
             .also {
                 runtime = it
                 prefs(context).apply(it)
+                Reader.install(it) { tabManager?.tabs?.forEach(Reader::attach) }
             }
 
     fun prefs(context: Context): AirlockPrefs =
@@ -51,6 +52,12 @@ class BrowserTab(val id: Long, val session: GeckoSession) {
     var secure by mutableStateOf(false)
     /** The certificate of the page actually loaded (for Site info). */
     var certificate by mutableStateOf<java.security.cert.X509Certificate?>(null)
+    /** The reader extension's connection to this tab's page, and who's waiting for an article. */
+    var port: org.mozilla.geckoview.WebExtension.Port? = null
+    var onArticle: ((org.json.JSONObject) -> Unit)? = null
+    /** Set while the tab shows Reader view. */
+    var readerTitle by mutableStateOf<String?>(null)
+
     /** Hosts of trackers and ads Gecko blocked on the current page (shown on the shield). */
     val blocked = mutableStateListOf<String>()
 
@@ -74,6 +81,7 @@ class TabManager(private val runtime: GeckoRuntime) {
         val session = GeckoSession(PrivacySettings.sessionSettings())
         val tab = BrowserTab(nextId++, session)
         attachDelegates(tab)
+        Reader.attach(tab)
         session.open(runtime)
         tabs.add(tab)
         if (select) select(tab) else session.setActive(false)
@@ -134,6 +142,7 @@ class TabManager(private val runtime: GeckoRuntime) {
 
         session.progressDelegate = object : GeckoSession.ProgressDelegate {
             override fun onPageStart(session: GeckoSession, url: String) {
+                if (!url.startsWith("data:")) tab.readerTitle = null
                 tab.blocked.clear()
                 tab.url = url
                 tab.loading = true

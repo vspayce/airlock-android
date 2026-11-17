@@ -7,6 +7,8 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import android.net.Uri
+import org.mozilla.geckoview.ContentBlocking
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.GeckoSession
@@ -35,6 +37,8 @@ class BrowserTab(val id: Long, val session: GeckoSession) {
     var canGoBack by mutableStateOf(false)
     var canGoForward by mutableStateOf(false)
     var secure by mutableStateOf(false)
+    /** Hosts of trackers and ads Gecko blocked on the current page (shown on the shield). */
+    val blocked = mutableStateListOf<String>()
 
     val isBlank: Boolean get() = url.isBlank() || url == "about:blank"
 }
@@ -116,6 +120,7 @@ class TabManager(private val runtime: GeckoRuntime) {
 
         session.progressDelegate = object : GeckoSession.ProgressDelegate {
             override fun onPageStart(session: GeckoSession, url: String) {
+                tab.blocked.clear()
                 tab.url = url
                 tab.loading = true
                 tab.progress = 5
@@ -161,6 +166,13 @@ class TabManager(private val runtime: GeckoRuntime) {
             override fun onNewSession(session: GeckoSession, uri: String): GeckoResult<GeckoSession>? {
                 newTab(uri)
                 return null
+            }
+        }
+
+        session.contentBlockingDelegate = object : ContentBlocking.Delegate {
+            override fun onContentBlocked(session: GeckoSession, event: ContentBlocking.BlockEvent) {
+                val host = runCatching { Uri.parse(event.uri).host }.getOrNull()?.removePrefix("www.") ?: return
+                if (host !in tab.blocked) tab.blocked.add(host)
             }
         }
 
